@@ -1469,24 +1469,13 @@ async fn withdrawn_during_a_hold_then_crashed(rules: u8) -> (bool, Vec<String>, 
     // The crash: what the disk holds now, the kept withdrawal in it.
     assert!(hub.store.wait_durable(Duration::from_secs(20)).unwrap());
     copy_tree(&dir, &crashed);
+    // The start reads the chat's log as it is made (`Hub::new`), on this thread.
+    super::journal_restore::OLD_RULES.with(|r| r.set(rules));
     let (after, reopened) = restarted(&crashed, rules, &session.id, None);
-    let loaded = inbox_holds(&reopened, "m1");
-    // The inbox rebuilt again from the log, as a later `restore_queue` does.
-    after.restore_inbox(&reopened);
+    super::journal_restore::OLD_RULES.with(|r| r.set(0));
     let holds = inbox_holds(&reopened, "m1");
     let events = after.events(&session.id, 0, 100).unwrap();
-    let mut kinds: Vec<String> = events.iter().map(|e| e.kind.clone()).collect();
-    kinds.push(format!("loaded {loaded}, {:?}", reopened.status()));
-    let mut read = Vec::new();
-    let scanned = after.store.scan_kinds(&session.id, Hub::INBOX_KINDS, &mut |e| {
-        read.push(format!("{} {}", e.kind, e.msg));
-        true
-    });
-    kinds.push(format!("inbox kinds read {read:?}: {scanned:?}"));
-    let items = reopened.inbox.lock().unwrap().items.len();
-    let removed = reopened.inbox.lock().unwrap().removed.len();
-    let trimmed = reopened.inbox.lock().unwrap().trimmed.len();
-    kinds.insert(0, format!("{items} items, {removed} removed, {trimmed} trimmed"));
+    let kinds = events.iter().map(|e| e.kind.clone()).collect();
     let kept = reopened.unparked.lock().unwrap().len();
     drop((hub, after));
     let _ = std::fs::remove_dir_all(&dir);

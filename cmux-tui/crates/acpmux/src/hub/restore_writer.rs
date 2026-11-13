@@ -328,7 +328,9 @@ impl Hub {
         kinds: &[&str],
         f: &mut dyn FnMut(EventRecord) -> bool,
     ) -> anyhow::Result<()> {
-        if self.at_918d() {
+        // A start reads its chats' logs as the hub is made, before a test's hub replays its
+        // rules: the thread's rules then.
+        if self.at_918d() || super::journal_restore::rules_of_918d() {
             return self.store.scan_kinds(&session.id, kinds, f);
         }
         self.scan_kinds_and_kept(session, kinds, f)
