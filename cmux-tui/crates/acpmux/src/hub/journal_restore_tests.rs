@@ -1485,7 +1485,8 @@ async fn withdrawn_during_a_hold_then_crashed(rules: u8) -> (bool, Vec<String>, 
     kinds.push(format!("inbox kinds read {read:?}: {scanned:?}"));
     let items = reopened.inbox.lock().unwrap().items.len();
     let removed = reopened.inbox.lock().unwrap().removed.len();
-    kinds.push(format!("{items} items, {removed} removed"));
+    let trimmed = reopened.inbox.lock().unwrap().trimmed.len();
+    kinds.insert(0, format!("{items} items, {removed} removed, {trimmed} trimmed"));
     let kept = reopened.unparked.lock().unwrap().len();
     drop((hub, after));
     let _ = std::fs::remove_dir_all(&dir);
