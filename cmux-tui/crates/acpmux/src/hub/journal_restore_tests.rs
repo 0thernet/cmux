@@ -1477,6 +1477,15 @@ async fn withdrawn_during_a_hold_then_crashed(rules: u8) -> (bool, Vec<String>, 
     let events = after.events(&session.id, 0, 100).unwrap();
     let mut kinds: Vec<String> = events.iter().map(|e| e.kind.clone()).collect();
     kinds.push(format!("loaded {loaded}, {:?}", reopened.status()));
+    let mut read = Vec::new();
+    let scanned = after.store.scan_kinds(&session.id, Hub::INBOX_KINDS, &mut |e| {
+        read.push(format!("{} {}", e.kind, e.msg));
+        true
+    });
+    kinds.push(format!("inbox kinds read {read:?}: {scanned:?}"));
+    let items = reopened.inbox.lock().unwrap().items.len();
+    let removed = reopened.inbox.lock().unwrap().removed.len();
+    kinds.push(format!("{items} items, {removed} removed"));
     let kept = reopened.unparked.lock().unwrap().len();
     drop((hub, after));
     let _ = std::fs::remove_dir_all(&dir);
