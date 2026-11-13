@@ -1443,8 +1443,9 @@ fn inbox_holds(session: &Session, prompt_id: &str) -> bool {
 /// A chat on disk whose inbox holds another agent's message m1; a restore that stops short;
 /// while it holds the chat, m1 is withdrawn (its sender hears so); then the daemon crashes, and
 /// starts again on what the disk held. Whether the inbox holds m1 after that ordinary start
-/// reads the chat's log: then its next turn takes it.
-async fn withdrawn_during_a_hold_then_crashed(rules: u8) -> bool {
+/// reads the chat's log (then its next turn takes it), with the journal's kinds and how many
+/// records stay kept after that start, for a failure to name.
+async fn withdrawn_during_a_hold_then_crashed(rules: u8) -> (bool, Vec<String>, usize) {
     let (dir, crashed) = crash_dirs("inbox-hold-crash");
     let hub = hub_on_disk(&dir, rules, None);
     let req = NewRequest { cwd: Some(std::env::temp_dir()), ..NewRequest::default() };
@@ -1470,10 +1471,13 @@ async fn withdrawn_during_a_hold_then_crashed(rules: u8) -> bool {
     copy_tree(&dir, &crashed);
     let (after, reopened) = restarted(&crashed, rules, &session.id, None);
     let holds = inbox_holds(&reopened, "m1");
+    let events = after.events(&session.id, 0, 100).unwrap();
+    let kinds = events.iter().map(|e| e.kind.clone()).collect();
+    let kept = reopened.unparked.lock().unwrap().len();
     drop((hub, after));
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&crashed);
-    holds
+    (holds, kinds, kept)
 }
 
 /// Review of #37284 at 918d2403, F2: an inbox message withdrawn while a restore holds the chat
@@ -1483,8 +1487,9 @@ async fn withdrawn_during_a_hold_then_crashed(rules: u8) -> bool {
 /// journal alone: the message came back, and the next turn delivered it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_inbox_message_withdrawn_during_a_hold_stays_withdrawn_through_a_crash() {
-    let old = withdrawn_during_a_hold_then_crashed(super::journal_restore::AT_918D).await;
-    assert!(old, "918d2403 kept the withdrawal out of the rebuilt inbox");
-    let now = withdrawn_during_a_hold_then_crashed(0).await;
-    assert!(!now, "the withdrawn message is back in the inbox");
+    let at_918d = super::journal_restore::AT_918D;
+    let (old, kinds, kept) = withdrawn_during_a_hold_then_crashed(at_918d).await;
+    assert!(old, "918d2403 kept the withdrawal out of the rebuilt inbox: {kinds:?}, {kept} kept");
+    let (now, kinds, kept) = withdrawn_during_a_hold_then_crashed(0).await;
+    assert!(!now, "the withdrawn message is back in the inbox: {kinds:?}, {kept} kept");
 }
