@@ -33,9 +33,9 @@ impl Hub {
             }
         } else {
             let less = |v: usize| Some(v.saturating_sub(n));
-            let _ = session.attached.fetch_update(Ordering::SeqCst, Ordering::SeqCst, less);
+            let _ = session.attached.try_update(Ordering::SeqCst, Ordering::SeqCst, less);
             if !visible {
-                let _ = session.hidden.fetch_update(Ordering::SeqCst, Ordering::SeqCst, less);
+                let _ = session.hidden.try_update(Ordering::SeqCst, Ordering::SeqCst, less);
             }
         }
         self.left_off(session, was_shown, seen);
@@ -53,7 +53,7 @@ impl Hub {
         let seen = session.seq.load(Ordering::SeqCst);
         let less = |v: usize| Some(v.saturating_sub(1));
         if visible {
-            let _ = session.hidden.fetch_update(Ordering::SeqCst, Ordering::SeqCst, less);
+            let _ = session.hidden.try_update(Ordering::SeqCst, Ordering::SeqCst, less);
             self.mark_seen(session);
         } else {
             session.hidden.fetch_add(1, Ordering::SeqCst);
