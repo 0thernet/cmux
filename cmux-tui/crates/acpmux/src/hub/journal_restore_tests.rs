@@ -1443,8 +1443,9 @@ fn inbox_holds(session: &Session, prompt_id: &str) -> bool {
 /// A chat on disk whose inbox holds another agent's message m1; a restore that stops short;
 /// while it holds the chat, m1 is withdrawn (its sender hears so); then the daemon crashes, and
 /// starts again on what the disk held. Whether the inbox holds m1 after that ordinary start
-/// reads the chat's log (then its next turn takes it), with the journal's kinds and how many
-/// records stay kept after that start, for a failure to name.
+/// reads the chat's log, or after its inbox is rebuilt from nothing at `rules` (then its next
+/// turn takes it), with the journal's kinds and how many records stay kept after that start,
+/// for a failure to name.
 async fn withdrawn_during_a_hold_then_crashed(rules: u8) -> (bool, Vec<String>, usize) {
     let (dir, crashed) = crash_dirs("inbox-hold-crash");
     let hub = hub_on_disk(&dir, rules, None);
@@ -1469,11 +1470,17 @@ async fn withdrawn_during_a_hold_then_crashed(rules: u8) -> (bool, Vec<String>, 
     // The crash: what the disk holds now, the kept withdrawal in it.
     assert!(hub.store.wait_durable(Duration::from_secs(20)).unwrap());
     copy_tree(&dir, &crashed);
-    // The start reads the chat's log as it is made (`Hub::new`), on this thread.
-    super::journal_restore::OLD_RULES.with(|r| r.set(rules));
     let (after, reopened) = restarted(&crashed, rules, &session.id, None);
-    super::journal_restore::OLD_RULES.with(|r| r.set(0));
-    let holds = inbox_holds(&reopened, "m1");
+    // The start read the chat's log as the hub was made, at the rules of now: its rebuild of
+    // the inbox runs again from nothing at `rules`, the kept withdrawal still not stored.
+    let loaded = inbox_holds(&reopened, "m1");
+    {
+        let mut inbox = reopened.inbox.lock().unwrap();
+        inbox.items.clear();
+        inbox.removed.clear();
+    }
+    after.restore_inbox(&reopened);
+    let holds = loaded || inbox_holds(&reopened, "m1");
     let events = after.events(&session.id, 0, 100).unwrap();
     let kinds = events.iter().map(|e| e.kind.clone()).collect();
     let kept = reopened.unparked.lock().unwrap().len();
