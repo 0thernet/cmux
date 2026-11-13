@@ -1470,9 +1470,13 @@ async fn withdrawn_during_a_hold_then_crashed(rules: u8) -> (bool, Vec<String>, 
     assert!(hub.store.wait_durable(Duration::from_secs(20)).unwrap());
     copy_tree(&dir, &crashed);
     let (after, reopened) = restarted(&crashed, rules, &session.id, None);
+    let loaded = inbox_holds(&reopened, "m1");
+    // The inbox rebuilt again from the log, as a later `restore_queue` does.
+    after.restore_inbox(&reopened);
     let holds = inbox_holds(&reopened, "m1");
     let events = after.events(&session.id, 0, 100).unwrap();
-    let kinds = events.iter().map(|e| e.kind.clone()).collect();
+    let mut kinds: Vec<String> = events.iter().map(|e| e.kind.clone()).collect();
+    kinds.push(format!("loaded {loaded}, {:?}", reopened.status()));
     let kept = reopened.unparked.lock().unwrap().len();
     drop((hub, after));
     let _ = std::fs::remove_dir_all(&dir);
